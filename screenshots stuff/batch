@@ -1,0 +1,218 @@
+#!/bin/bash -x
+
+
+
+while getopts ":d:f:S:s:i:n:r:o:p:hv" opt; do
+  case $opt in
+    d)
+      declare -r  location="$OPTARG"
+      ;;
+    f)
+      declare -r filename="$OPTARG"
+      ;;
+    S)
+      declare -r sub="$OPTARG"
+      ;;
+    s)
+      declare -r startFrame="$OPTARG"
+      ;;
+    i)
+      declare -r intervalScreenshots="$OPTARG"
+      ;;
+    n)
+      declare -r numberScreenshots="$OPTARG"
+      ;;
+    r) 
+      declare -r videoHeight="$OPTARG"
+      ;;
+	o) 
+      declare -r videoOut="$OPTARG"
+      ;;
+	p) 
+      declare -r extra="$OPTARG"
+      ;;
+    h)
+      declare -r help="TRUE"
+      ;;
+    v)
+      declare -r verbose="TRUE"
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      exit 1
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      exit 1
+      ;;
+  esac
+done
+
+# Quit if we missed -s or -n. Or if -h is used.
+if [[ -z "$startFrame" ]] || [[ -z "$numberScreenshots" ]] || [[ -n "$help" ]]  ; then
+  printf 'You must at the minimum set -s and -n. -d or -f are also requiered.
+  -d <set a location directory>
+  -f <a video file>
+  -S <sub options: lang|auto|no>
+  -s <the start frame>
+  -i <set an optional frame interval>
+  -n <the number of screenshots you want>
+  -r <the desired display resolution>
+  -o <optional out directory, defaults to File location>
+  -h <help>
+  -v <set verbose to true>\n\n'
+  
+  exit 1
+# If user tries to use -d and -f together. This is redundent. Preventing the creation stupid questions later.
+elif [[ -d "$location" ]] && [[ -f "$filename" ]]   ; then
+  printf '
+  Cannot set -d and -f at the same time
+  Please use -d for multiple files only
+  Please only use full path with -f \n\n'
+	
+  exit 1
+  
+fi
+
+# Subtitle Selection
+
+if [[ -S 'no' ]] ; 
+then
+ declare langcom='sid'
+ declare lang=no
+elif [[ -z "$sub" ]] ; 
+then
+ declare langcom='sid'
+ declare lang='auto'
+else
+ declare langcom='slang'
+ declare lang="$sub"
+fi
+
+#Extra Set Up
+
+if [[ -z "$extra" ]] ; 
+then
+  declare -r extra1=' '
+else
+  declare -r extra1="$extra"
+fi
+
+# Resolution Set Up
+if [[ -z "$videoHeight" ]] ; 
+then
+  declare -r vRes='x1080'
+else
+  declare -r vRes='x'"$videoHeight"
+fi
+
+
+# Automatic directory finding if -d isn't set.
+if [[ -z "$location" ]] ; 
+then
+  declare -r dir="."
+else
+  declare -r dir="$location"
+fi
+for f in "$dir"/*
+
+do
+# Loop for file. Sets to either f in $dir or $filename.
+if [[ -z "$filename" ]] ; 
+then
+declare file="$f"
+
+elif [[ -f "$filename" ]] ; 
+then
+declare file="$filename"
+else 
+echo "No Files Found"
+
+exit
+
+fi
+
+# Set Parent Image Directory
+
+if [[ -z "$videoOut" ]] ; 
+then
+  declare -r vOut="$dir"
+else
+  declare -r vOut="$videoOut"
+fi
+
+# Creates a directiry for image placement
+ declare base="$(basename "$file" | cut -d "." -f 1 2)"
+mkdir "$vOut"'/'"$base"
+# Start mpv
+ 
+mpv "$extra1" --pause --quiet --no-osc --vo=gpu --gpu-api=opengl --no-audio --osd-level=0  --no-border --framedrop=no --"$langcom"="$lang" --geometry="$vRes" --framedrop=no --scaler-lut-size=8 --scale=spline36 --cscale=spline36 --screenshot-template=%F-%ws --screenshot-format=png --screenshot-png-compression=5 --screenshot-directory="$vOut"'/'"$base" "$file" --input-ipc-server=/tmp/mpvsocket  > /dev/null 2>&1 &
+ 
+ 
+# Information grabbing
+
+ sleep 1
+
+ declare lastFrame="$(echo '{ "command": ["get_property", "estimated-frame-count"]}' | socat - /tmp/mpvsocket | cut -d":" -f2 | cut -d , -f1)" 
+ 
+ sleep 1
+
+ declare fpsVideo="$(echo '{ "command": ["get_property", "estimated-vf-fps"]}' | socat - /tmp/mpvsocket | cut -d":" -f2 | cut -d , -f1)"
+ 
+ 
+ sleep 1
+
+# Declare interval for each screenshot
+if [[ -z "$intervalScreenshots" ]] ; 
+then
+  declare diffFrame="$(awk "BEGIN {printf $lastFrame - $startFrame}")"
+  declare intervalFrame="$(awk "BEGIN {printf $diffFrame / $numberScreenshots}")"
+  
+else
+  declare -r intervalFrame="$intervalScreenshots"
+  
+fi
+
+# Looping to take screenshots
+declare currentFrame="$startFrame"
+for i in $(seq 1 "$numberScreenshots") ; 
+do
+  
+   declare currentTime="$(awk "BEGIN {printf $currentFrame / $fpsVideo}")"
+  
+  if [[ -n "$verbose" ]] ; then
+    printf 'File: %s\n' "$base"
+    printf 'Current time: %.2f\n' "$currentTime"
+    printf 'Last frame: %s\n' "$lastFrame"
+    printf 'FPS: %s\n' "$fpsVideo"
+    printf 'Interval: %s\n' "$intervalFrame"
+    printf 'Screenshot: %02d\n\n\n' "$i"
+  
+ fi
+  # Debug line
+  
+  
+  
+   echo '{ "command": ["set_property", "pause", true] }'	| socat - /tmp/mpvsocket
+  
+   sleep 1
+   
+   echo '{ "command": ["seek", '$currentTime', "absolute"] }' | socat - /tmp/mpvsocket
+   
+   sleep 1
+   
+   echo '{ "command": ["screenshot", "window"] }' | socat - /tmp/mpvsocket
+   
+   sleep 1
+   
+   
+
+currentFrame="$(awk "BEGIN {printf $currentFrame+$intervalFrame}")"
+
+
+
+done
+
+echo '{ "command": ["quit"] }'	| socat - /tmp/mpvsocket
+
+done

@@ -1,0 +1,60 @@
+#!/bin/bash
+ 
+cd "$1"
+mkdir ocr
+
+for f in *.png ;
+do
+base="$(basename "$f" | cut -d "." -f 1,2)"
+echo "$base"
+if [[ -z "$2" ]] ; 
+then
+
+tran="$(
+rf=$(convert xc: -format "%[fx:100/100]" info:)
+gf=$(convert xc: -format "%[fx:100/100]" info:)
+bf=$(convert xc: -format "%[fx:100/100]" info:)
+convert "$f" -crop +0+740 -color-matrix "\
+$rf $gf $bf \
+$rf $gf $bf \
+$rf $gf $bf \
+" \
+ -white-threshold 99.9% -fuzz 40% -fill white +opaque black -fill black -draw 'color 10,10 floodfill' -fill black -draw 'color 700,50 floodfill' -fill black -draw 'color 1000,10 floodfill' -fill black -draw 'color 700,150 floodfill' -fill black -draw 'color 1300,320 floodfill' +repage ocr/"$base".png)"
+  
+else
+tran="$(convert "$f"  -separate -average  -crop +0+740 -negate -threshold 25% -fill white -draw 'color 700,10 floodfill' +repage ocr/"$base".png)"
+  
+fi 
+$tran
+cd ocr
+magick mogrify -pointsize 50 -fill blue -draw 'text 1400,310 "L" ' +repage "$base".png
+#magick mogrify -resize 300% +repage "$base".png
+cd ..
+
+
+done
+cd ocr
+counter=0
+for i in *.png ;
+do
+((counter++))
+echo "$counter"
+base2="$(basename "$i" | cut -d "." -f 1,2 )"
+tesseract "$i" stdout -c page_separator='' --psm 6 --oem 1 --dpi 300 | { tr '\n' ' '; tr -s  [:space:] ' ';  echo; } >> text.txt
+echo "$base2""  " >> time.txt
+
+done
+awk '{printf ("%s", $0); getline < "text.txt"; print $0 }' time.txt >> out.txt
+sed -i 's/|/I/g' out.txt
+sed -i 's/\[/I/g' out.txt
+#sed -i 's/L//g' out.txt
+#sed -i 's/=//g' out.txt
+sed -i 's/.$//' out.txt
+sed -i 's/.$//' out.txt
+
+while read line ; do
+sed "/[[:alpha:]]/ !d" >> sub.txt
+done <out.txt
+sed -i 's/\ $//' sub.txt
+sed -i 's/\.$//' sub.txt
+exit

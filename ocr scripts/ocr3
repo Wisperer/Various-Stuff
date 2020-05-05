@@ -1,0 +1,61 @@
+#!/bin/bash
+
+sub="$1"            # path to sub file
+OLD=$IFS            # remember current delimiter
+IFS=$'\n'           # set delimiter to the new line
+raw=( $(cat $sub) ) # load sub into raw array
+IFS=$OLD            # set default delimiter back
+
+reset () {
+    unset raw[0]        # remove 1-st item from array
+    raw=( "${raw[@]}" ) # rearange array
+}
+
+output () {
+    val1=$(echo "$time3" | awk -F: '{ print ($1 * 3600) + ($2 * 60) + $3 }')
+	#echo $val1
+	val2=$(echo "00:00:00.150" | awk -F: '{ print ($1 * 3600) + ($2 * 60) + $3 }')
+	#echo $val2
+	diff="$(awk -M "BEGIN {printf $val1 + $val2}")"
+	#echo $diff
+	newtime2=$(date -d@$diff -u +"%H:%M:%S,%3N")
+	
+	val1=$(echo "$time1" | awk -F: '{ print ($1 * 3600) + ($2 * 60) + $3 }')
+	#echo $val1
+	val2=$(echo "00:00:00.150" | awk -F: '{ print ($1 * 3600) + ($2 * 60) + $3 }')
+	#echo $val2
+	diff="$(awk -M "BEGIN {printf $val1 - $val2}")"
+	#echo $diff
+	newtime1=$(date -d@$diff -u +"%H:%M:%S,%3N")
+	
+	printf "$newtime1 --> $newtime2\n$text1\n\n"
+	
+	}
+
+speen () {
+	time3=$time2
+	#sleep .5
+    reset
+    test=( "${raw[@]::2}" ) # get two more items
+    test2=( ${test[0]} )    # split 2-nd item
+    time2=${test2[0]}       # get 2-nd timing
+    text2=${test2[@]:1}     # get 2-nd text
+	
+    # if only one item in test than this is the end, return
+	
+			
+    [[ "${test[1]}" ]] || { printf "$time1 --> $time2\n$text1\n\n"; raw=; return; }
+    #   compare,     speen more if match,  print ang go further if not 
+	
+    [[ "$text1" == "$text2" ]] && speen || output
+}
+
+N=1 # set counter
+while [[ "${raw[@]}" ]]; do # loop through data
+    echo $((N++))       # print and inc counter
+    test1=( $raw )      # get 1-st item
+    time1=${test1[0]}   # get 1-st timing
+    text1=${test1[@]:1}
+	# get 1-st text
+    speen
+done
