@@ -2,6 +2,7 @@
 
 
 import os
+import re
 import json
 import glob
 import requests
@@ -9,8 +10,6 @@ import dicttoxml
 import xml.dom.minidom
 from xml.dom.minidom import parseString
 from pathlib import Path
-# If dicttoxlm isn't installed by default just run 'pip install dictoxml' #
-
 
 # Define Global Varables #
 address = 'http://localhost:8111'
@@ -18,7 +17,6 @@ key = None
 importfolders = []
 sep = os.path.sep
 aid = None
-
 # Grab Shoko Auth Key #
 
 
@@ -62,11 +60,11 @@ def grabfolder():
 
 grabfolder()
 
-# print(importfolders)
+print(importfolders)
 
 
 # Grabbing And Exporting Episode Data #
-def episodeinfo(epname, epath, noext):
+def episoderemove(epname, epath, noext):
     EpisodeHeaders = {
         'accept': 'text/plain',
         'apikey': key
@@ -91,14 +89,12 @@ def episodeinfo(epname, epath, noext):
     etitle = json.loads(fileinfo.text).get('name', None)
     eyear = json.loads(fileinfo.text).get('year', None)
     episode = json.loads(fileinfo.text).get('epnumber', None)
-    season = json.loads(fileinfo.text).get('season', '0x1')
-    aid = json.loads(fileinfo.text).get('aid', None)
-    sid1 = json.loads(fileinfo.text).get('id', '-1')
+    season = json.loads(fileinfo.text).get('season', '1x1')
+    aid = json.loads(fileinfo.text).get('aid', '-1')
     seasonnum = season.split('x')
 
     #  Debug Stuff #
 
-    # print(sid)
     # print(aid)
     # print(eplot)
     # print(etitle)
@@ -126,44 +122,15 @@ def episodeinfo(epname, epath, noext):
     showparse = xml.dom.minidom.parseString(showxml)
     showprint = showparse.toprettyxml()
     if os.path.isfile(epath + sep + noext + ".nfo"):
-        print("Nfo File For This Episode Exists")
+        os.remove(epath + sep + noext + ".nfo")
+        print("REMOVING EPSODE DATA")
     else:
-        showfile = open(epath + sep + noext + ".nfo", "w")
-        showfile.write(showprint)
-        showfile.close()
-    return str(sid1)
-# More Data Grabbing #
+        print('')
 
-    # Set Up Tvdb, IMDB, and Anilist ID Retrival
+    # More Data Grabbing #
 
 
-def tvdbfetch(sid2):
-
-    TvdbHeaders = {
-        'accept': 'text/plain',
-        'apikey': key
-    }
-
-    TvdbParams = (
-        ('id',
-         sid2),
-
-
-    )
-
-    # More Data Mapping #
-    tvdbinfo = requests.get(
-        address + '/api/links/serie', headers=TvdbHeaders, params=TvdbParams)
-
-    tvdbraw = json.loads(tvdbinfo.text)
-    tvdbval = tvdbraw['tvdb']
-
-    for x in tvdbval:
-        tvdbid = x
-        return tvdbid
-
-
-def tvshowinfo(sid1, epath):
+def tvshowremove(aid, epath):
 
     ShowHeaders = {
         'accept': 'text/plain',
@@ -172,28 +139,25 @@ def tvshowinfo(sid1, epath):
 
     ShowParams = (
         ('id',
-         sid1),
+         aid),
 
     )
     # More Data Mapping #
     showinfo = requests.get(
-        address + '/api/serie/fromep', headers=ShowHeaders, params=ShowParams)
+        address + '/api/serie/fromaid', headers=ShowHeaders, params=ShowParams)
 
     splot = json.loads(showinfo.text).get('summary', None)
     soutline = json.loads(showinfo.text).get('summary', None)
     stitle = json.loads(showinfo.text).get('name', None)
     syear = json.loads(showinfo.text).get('year', None)
     air = json.loads(showinfo.text).get('premiered', None)
-    sid2 = json.loads(showinfo.text).get('id', '0')
-    tvdbid = tvdbfetch(sid2)
-    # print(tvdbid)
+
     show = {
         "plot": splot,
         "outline": soutline,
         "title": stitle,
         "year": syear,
         "premiered": air,
-        "tvdbid": tvdbid,
         "anidbid": aid,
     }
     # print(soutline)
@@ -205,16 +169,11 @@ def tvshowinfo(sid1, epath):
 
     # Creating tvshow.nfo XML Table and Writing It #
 
-    showxml = dicttoxml.dicttoxml(
-        show, custom_root='tvshowdetails', attr_type=False)
-    showparse = xml.dom.minidom.parseString(showxml)
-    showprint = showparse.toprettyxml()
     if os.path.isfile(epath + sep + "tvshow.nfo"):
-        print()
+        os.remove(epath + sep + "tvshow.nfo")
+        print("REMOVING SERIES DATA")
     else:
-        showfile = open(epath + sep + "tvshow.nfo", "w")
-        showfile.write(showprint)
-        showfile.close()
+        print('')
 
 
 extlist = ('*.mkv', '*.avi', '*.mp4')
@@ -226,11 +185,9 @@ for ext in extlist:
             epath = os.path.dirname(files)
             noext = os.path.splitext(epname)[0]
             print(epname)
-            # episodeinfo(epname, epath, noext)
-            sid1 = episodeinfo(epname, epath, noext)
-
-            if sid1 == "0":
-                print("Some Kind of Error Occured")
-
+            # print(folder)
+            episoderemove(epname, epath, noext)
+            if aid == "-1":
+                print("Release not on Anidb")
             else:
-                tvshowinfo(sid1, epath)
+                tvshowremove(aid, epath)
